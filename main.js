@@ -4,6 +4,8 @@ const qrcode = require('qrcode-terminal');
 const express = require('express');
 const app = express();
 
+const axios = require('axios');
+
 var constants = require('./constants');
 
 app.listen(3000, () => {
@@ -47,6 +49,31 @@ const client = new Client({
     
             if (message.body === '!ayuda') {
                     client.sendMessage(message.from, 'Hola! soy ' + constants.BOT_NAME + ', el asistente del foro!');
+            }
+
+            if (message.body.startsWith('!chatgpt')) {
+
+                // Define the URL of the REST API endpoint
+                const apiUrl = constants.N8N_SERVER + constants.ENDPOINT_CHATGPT;
+
+                // Define the JSON object to send in the POST request
+                const postData = {
+                    message: message.body.substring(8)
+                };
+            
+                // Make a POST request to the API endpoint
+                axios.post(apiUrl, postData)
+                .then(response => {
+                    // Extract the "message" field from the response data
+                    const messageResponse = response.data.message;
+                    client.sendMessage(message.from, messageResponse);
+                    console.log('Message:', messageResponse);
+                })
+                .catch(error => {
+                    // Handle any errors
+                    console.error('Error:', error);
+                });
+
             }
     });
 
