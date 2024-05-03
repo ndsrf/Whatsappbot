@@ -4,6 +4,7 @@
     "start": "node ."
   },
   "dependencies": {
+    "agenda": "^5.0.0",
     "axios": "^1.6.8",
     "express": "^4.19.2",
     "qrcode-terminal": "^0.12.0",
