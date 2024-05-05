@@ -43,6 +43,7 @@ const client = new Client({
     agenda.define('send message', {priority: 'high', concurrency: 10}, (job, done) => {
         const {from, content} = job.attrs.data;
         client.sendMessage(from, 'Me pediste que te recordara: ' + content);
+	done();
       });
     
     
