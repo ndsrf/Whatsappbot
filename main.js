@@ -1,8 +1,9 @@
 const { Client, LocalAuth, MessageTypes } = require('whatsapp-web.js');
 
 var constants = require('./constants');
-const Transcribe = require('./transcribe');
+const TranscribeLib = require('./transcribe');
 const ChatGPT = require('./chatgpt');
+const url = require("url");
 
 const qrcode = require('qrcode-terminal');
 
@@ -12,8 +13,17 @@ const app = express();
 const axios = require('axios');
 
 const Agenda = require('agenda');
+const { now } = require('agenda/dist/agenda/now');
 
 const connectionString = 'mongodb://127.0.0.1/wbagenda';
+
+var restartGoodMorningRoutine = false;
+
+if (process.argv[2] && process.argv[2] === '-rgm') {
+    restartGoodMorningRoutine = true;
+}
+
+
 
 const agenda = new Agenda({
     db: {address: connectionString, collection: 'ourScheduleCollectionName'},
@@ -50,46 +60,70 @@ agenda.define('send message', {priority: 'high', concurrency: 10}, (job, done) =
     done();
     });
 
-agenda.define('good morning routine', {priority: 'high', concurrency: 10}, (job, done) => {
-    const {from} = job.attrs.data;
+function buenosDias(){
+    const apiUrl = constants.N8N_SERVER + constants.ENDPOINT_GOODMORNING;
 
-    const apiUrl = constants.N8N_SERVER + constants.ENDPOINT_CHATGPT;
-    const todayDate = new Date();
-    var options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    var messageToChatGPT = "Eres un robot y das los buenos dias por la manana temprano, citando un hecho curioso que ocurriera hoy, y dando energia y animos para el dia que empieza. Hoy es " + todayDate.toLocaleDateString('es-ES', options);
+    var currentDate = new Date();
+    var cumpleDe = null;
+    var queryParams = null; 
 
-    // Define the JSON object to send in the POST request
-    const postData = {
-        message: messageToChatGPT
-    };
+    const todayDay = currentDate.getDate();
+    switch (currentDate.getMonth())
+    {
+        case 4: 
+            switch (todayDay) {
+                case 24: cumpleDe = "Nestor"; break;
+            }
+    }
+
+    if (cumpleDe) {
+        queryParams = {
+            cumple: cumpleDe
+        };    
+    }
 
     // Make a POST request to the API endpoint
-    axios.post(apiUrl, postData)
+    return axios.get(apiUrl, { params: queryParams })
     .then(response => {
         // Extract the "message" field from the response data
         const messageResponse = response.data.message;
-        client.sendMessage(from, messageResponse);
         // console.log('Message:', messageResponse);
+        return messageResponse;
     })
     .catch(error => {
         // Handle any errors
         console.error('Error:', error);
     });
 
+}
+
+agenda.define(constants.AGENDA_GOODMORNINGROUTINE, {priority: 'high', concurrency: 10}, (job, done) => {
+    const {from} = job.attrs.data;
+
+    buenosDias().then(msg => { 
+        client.sendMessage(from, msg) 
+    })
+    .catch(error => {
+        // Handle any errors
+        console.error('Error:', error);
+    });
+    
     done();
 
     job.repeatEvery('0 0 6 * * *', {
         skipImmediate: true
     });
    job.save();
-
-    });    
+   
+});    
 
 client.on('ready', () => {
     console.log('Client is ready!');
 
-    const goodMorningJob = agenda.create('good morning routine', {from: '120363292398230155@g.us'});
-    goodMorningJob.save();
+    if (restartGoodMorningRoutine) {
+        const goodMorningJob = agenda.create(constants.AGENDA_GOODMORNINGROUTINE, {from: constants.WHATSAPP_MAINGROUPID});
+        goodMorningJob.save();    
+    }
 });
 
 client.on('qr', qr => {
@@ -161,11 +195,17 @@ client.on('message', async(message) => {
                     } 
                     else {
                         var quotedMessage = await message.getQuotedMessage();
-                        if (quotedMessage.type.includes(MessageTypes.AUDIO) || quotedMessage.type.includes(MessageTypes.VOICE)) {
+                        if (quotedMessage.type.includes(MessageTypes.IMAGE) || quotedMessage.type.includes(MessageTypes.AUDIO) || quotedMessage.type.includes(MessageTypes.VOICE)) {
             
-                            const transcription = await Transcribe(quotedMessage);
+                            const transcription = await TranscribeLib.Transcribe(quotedMessage);
                             quotedMessage.reply(transcription);
                 
+                        } else if (quotedMessage.type.includes(MessageTypes.TEXT)) {
+                            var urls = quotedMessage.body.match(/\bhttps?:\/\/\S+/gi);
+                            if (urls.length > 0) {
+                                const transcription = await  TranscribeLib.ResumeURL(urls[0]);
+                                quotedMessage.reply(transcription);        
+                            }
                         }
                 
                     }
@@ -187,8 +227,14 @@ client.on('message', async(message) => {
 
 client.initialize();
 
+//  buenosDias().then(msg => { 
+//      client.sendMessage('120363292398230155@g.us', msg) 
+//  });
+
 (async function() {
     await agenda.start();
-    const numRemoved = agenda.cancel({ name: 'good morning routine' });
+    if (restartGoodMorningRoutine) {
+        const numRemoved = agenda.cancel({ name: constants.AGENDA_GOODMORNINGROUTINE });
+    }
   })();
 
